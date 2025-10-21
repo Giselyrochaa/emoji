@@ -85,7 +85,7 @@
         <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg mb-8">
             <h2 class="text-xl font-bold mb-4 text-gray-700">Escreva sua Percepção</h2>
             
-            <!-- NOVO CAMPO DE NOME/APELIDO -->
+            <!-- CAMPO DE NOME/APELIDO -->
             <input type="text" id="user-name" maxlength="50" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 resize-none mb-3" placeholder="Seu Nome/Apelido (Opcional, Máx. 50 caracteres)">
 
             <textarea id="feedback-text" rows="4" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-4 focus:ring-indigo-200 focus:border-indigo-500 resize-none mb-4" placeholder="Digite aqui seu elogio, sugestão, crítica ou ideia..."></textarea>
@@ -109,10 +109,32 @@
         </div>
 
         <!-- Área de Exibição do Mural -->
-        <h2 class="text-2xl font-bold text-gray-800 mb-5">Mural de Notas (Tempo Real)</h2>
+        <h2 class="text-2xl font-bold text-gray-800 mb-5">Visualização de Percepções</h2>
         <div id="auth-status" class="text-sm text-gray-500 mb-4">Autenticação: Conectando...</div>
-        <div id="feedback-mural" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            <!-- Notas serão injetadas aqui -->
+        
+        <!-- Botões de Alternância de Visualização -->
+        <div class="flex mb-6 space-x-2 flex-wrap">
+            <button id="mural-view-btn" onclick="toggleView('mural')" class="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white shadow-md transition duration-300 transform hover:scale-[1.02] mb-2">
+                Mural de Notas (Cards)
+            </button>
+            <button id="report-view-btn" onclick="toggleView('report')" class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 text-gray-700 shadow-md transition duration-300 transform hover:scale-[1.02] mb-2">
+                Relatório Agrupado (Tópicos)
+            </button>
+        </div>
+        
+        <!-- Container da Visualização de Cards (Padrão) -->
+        <div id="mural-view">
+            <div id="feedback-mural" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- Notas em formato de card serão injetadas aqui -->
+            </div>
+        </div>
+
+        <!-- Container da Visualização de Relatório (Agrupado) -->
+        <div id="report-view" class="hidden bg-white p-4 md:p-6 rounded-xl shadow-lg">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Relatório Consolidado (Ficheiro Organizado)</h3>
+            <div id="grouped-report-content">
+                <p class="text-gray-500">O relatório será gerado automaticamente quando houverem notas.</p>
+            </div>
         </div>
     </div>
 
@@ -145,6 +167,7 @@
 
         let db, auth, userId = null;
         let isAuthReady = false;
+        let currentView = 'mural'; // Padrão: Mural de Cards
 
         // Mapeamento de categorias
         const CATEGORIES = {
@@ -157,6 +180,35 @@
         const authStatusEl = document.getElementById('auth-status');
         const feedbackMuralEl = document.getElementById('feedback-mural');
         const errorMessageEl = document.getElementById('error-message');
+        const muralViewEl = document.getElementById('mural-view');
+        const reportViewEl = document.getElementById('report-view');
+        const groupedReportContentEl = document.getElementById('grouped-report-content');
+        const muralViewBtn = document.getElementById('mural-view-btn');
+        const reportViewBtn = document.getElementById('report-view-btn');
+
+        /**
+         * Alterna entre a visualização de Cards e o Relatório Agrupado.
+         * @param {string} view - 'mural' ou 'report'.
+         */
+        window.toggleView = (view) => {
+            currentView = view;
+            if (view === 'mural') {
+                muralViewEl.classList.remove('hidden');
+                reportViewEl.classList.add('hidden');
+                muralViewBtn.classList.replace('bg-gray-200', 'bg-indigo-600');
+                muralViewBtn.classList.replace('text-gray-700', 'text-white');
+                reportViewBtn.classList.replace('bg-indigo-600', 'bg-gray-200');
+                reportViewBtn.classList.replace('text-white', 'text-gray-700');
+            } else {
+                muralViewEl.classList.add('hidden');
+                reportViewEl.classList.remove('hidden');
+                muralViewBtn.classList.replace('bg-indigo-600', 'bg-gray-200');
+                muralViewBtn.classList.replace('text-white', 'text-gray-700');
+                reportViewBtn.classList.replace('bg-gray-200', 'bg-indigo-600');
+                reportViewBtn.classList.replace('text-gray-700', 'text-white');
+            }
+        };
+
 
         /**
          * Inicializa o Firebase e a autenticação.
@@ -185,7 +237,6 @@
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
-                        // ALTERAÇÃO 1: Não mostra o ID do usuário na tela
                         authStatusEl.textContent = "Autenticação: Conectado. Mural pronto!";
                         isAuthReady = true;
                         // Inicia o listener de dados após a autenticação
@@ -215,13 +266,11 @@
          */
         window.submitFeedback = async (category) => {
             const feedbackText = document.getElementById('feedback-text').value.trim();
-            // ALTERAÇÃO 2: Pega o nome/apelido
             const userName = document.getElementById('user-name').value.trim(); 
 
             errorMessageEl.classList.add('hidden');
 
             if (!isAuthReady) {
-                // Mensagem de erro enquanto não estiver pronto
                 errorMessageEl.textContent = "Aguarde a inicialização do mural."; 
                 errorMessageEl.classList.remove('hidden');
                 return;
@@ -239,47 +288,39 @@
                 return;
             }
             
-            // Caminho da coleção que corresponde às regras de segurança
             const muralPath = `artifacts/${appId}/public/data/feedback_mural`;
 
             try {
-                // ALTERAÇÃO 2: Salva o nome/apelido (userName) no documento
-                const docRef = await addDoc(collection(db, muralPath), {
+                await addDoc(collection(db, muralPath), {
                     text: feedbackText, 
                     category: category, 
-                    userId: userId, // Mantido para rastreabilidade no banco de dados
-                    userName: userName, // NOVO CAMPO
+                    userId: userId, 
+                    userName: userName,
                     timestamp: serverTimestamp(),
                 });
-                console.log("Documento escrito com ID: ", docRef.id);
-
-                // Limpa os campos de texto após o envio
                 document.getElementById('feedback-text').value = '';
-                document.getElementById('user-name').value = ''; // Limpa o nome também
+                document.getElementById('user-name').value = ''; 
 
             } catch (e) {
                 console.error("Erro ao adicionar documento: ", e);
-                // Exibe uma mensagem mais clara para o usuário sobre falha
                 errorMessageEl.textContent = "Erro ao enviar feedback. Verifique se o nome/apelido não excede 50 caracteres e a percepção 500.";
                 errorMessageEl.classList.remove('hidden');
             }
         }
 
         /**
-         * Renderiza a lista de notas no mural.
+         * Renderiza a lista de notas no formato de cards.
          * @param {Array<Object>} notes - Lista de objetos de feedback.
          */
-        function renderFeedback(notes) {
-            feedbackMuralEl.innerHTML = ''; // Limpa o mural
+        function renderCardView(notes) {
+            feedbackMuralEl.innerHTML = ''; 
 
             notes.forEach(note => {
                 const { text, category, userName, timestamp } = note;
                 const config = CATEGORIES[category] || { emoji: '?', label: 'Desconhecido', colorClass: 'bg-gray-200' };
 
-                // ALTERAÇÃO 3: Define o nome a ser exibido
                 const authorDisplay = userName && userName.trim().length > 0 ? userName : 'Anônimo';
 
-                // Formata o timestamp
                 let timeStr = 'agora';
                 if (timestamp && timestamp.toDate) {
                     timeStr = timestamp.toDate().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
@@ -299,28 +340,126 @@
                 feedbackMuralEl.appendChild(noteDiv);
             });
         }
+        
+        /**
+         * Agrupa as notas e renderiza o relatório organizado em formato de ficheiro.
+         * @param {Array<Object>} notes - Lista de objetos de feedback.
+         */
+        function renderReportView(notes) {
+            groupedReportContentEl.innerHTML = '';
+            
+            if (notes.length === 0) {
+                groupedReportContentEl.innerHTML = '<p class="text-gray-500">Nenhuma nota encontrada para gerar o relatório.</p>';
+                return;
+            }
+
+            // 1. Agrupar por Categoria
+            const groupedNotes = notes.reduce((acc, note) => {
+                const category = note.category || 'desconhecido';
+                if (!acc[category]) {
+                    acc[category] = [];
+                }
+                acc[category].push(note);
+                return acc;
+            }, {});
+
+            let htmlContent = '';
+            let totalCount = 0;
+            let summaryTable = '';
+
+            // 2. Tabela Sumário Rápido
+            summaryTable += `<div class="overflow-x-auto mb-8">
+                                <h4 class="text-lg font-bold mb-3 text-gray-700">Sumário Rápido de Contagens</h4>
+                                <table class="min-w-full divide-y divide-gray-200 rounded-lg overflow-hidden shadow-sm">
+                                    <thead class="bg-gray-100">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Categoria</th>
+                                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Emoji</th>
+                                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Contagem</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">`;
+
+            Object.keys(CATEGORIES).forEach(key => {
+                const config = CATEGORIES[key];
+                const count = groupedNotes[key] ? groupedNotes[key].length : 0;
+                totalCount += count;
+                summaryTable += `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${config.label}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm">${config.emoji}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-bold">${count}</td>
+                    </tr>
+                `;
+            });
+            
+            summaryTable += `
+                                        <tr class="bg-indigo-50 font-extrabold border-t-2 border-indigo-200">
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-indigo-700" colspan="2">TOTAL GERAL</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-indigo-700">${totalCount}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>`;
+            
+            htmlContent += summaryTable;
+            htmlContent += '<h4 class="text-xl font-bold mt-8 mb-4 border-b pb-2 text-gray-800">Detalhe por Tópico (Ficheiro Organizado)</h4>';
+
+            // 3. Detalhe por Tópico (Ficheiro)
+            Object.keys(CATEGORIES).forEach(key => {
+                const notesInCategory = groupedNotes[key] || [];
+                const config = CATEGORIES[key];
+                const count = notesInCategory.length;
+
+                // Título do Ficheiro (Categoria)
+                htmlContent += `<div class="mt-6 p-3 rounded-t-lg shadow-inner ${config.colorClass} border-b-2 border-gray-400">
+                                    <h5 class="text-lg font-bold text-gray-800">
+                                        ${config.emoji} ${config.label} (${count} Notas)
+                                    </h5>
+                                </div>
+                                <ul class="list-none space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-b-lg mb-6">`;
+
+                if (count === 0) {
+                     htmlContent += `<li class="text-gray-500 italic text-sm">Nenhuma nota encontrada nesta categoria para gerar o ficheiro.</li>`;
+                } else {
+                    notesInCategory.forEach(note => {
+                        const authorDisplay = note.userName && note.userName.trim().length > 0 ? note.userName : 'Anônimo';
+                        
+                        htmlContent += `<li class="text-gray-800 p-2 border-l-4 border-indigo-500 bg-white rounded-md shadow-sm">
+                                            <strong class="font-medium text-indigo-700 text-sm">Por: ${authorDisplay}</strong>
+                                            <p class="mt-1 text-base">${note.text}</p>
+                                        </li>`;
+                    });
+                }
+
+                htmlContent += `</ul>`;
+            });
+
+            groupedReportContentEl.innerHTML = htmlContent;
+        }
 
         /**
          * Configura o listener em tempo real para o mural.
          */
         function setupRealtimeListener() {
-            // Caminho para dados públicos e compartilhados
             const muralPath = `artifacts/${appId}/public/data/feedback_mural`;
             const q = query(collection(db, muralPath), orderBy("timestamp", "desc"));
             
-            // onSnapshot é o listener em tempo real
             onSnapshot(q, (snapshot) => {
                 const notes = [];
                 snapshot.forEach((doc) => {
                     notes.push({ id: doc.id, ...doc.data() });
                 });
-                // Garante que o usuário está autenticado antes de renderizar (boa prática)
+
                 if(isAuthReady) {
-                     renderFeedback(notes);
+                     // Atualiza ambas as visualizações (Mural de Cards e Relatório)
+                     renderCardView(notes); 
+                     renderReportView(notes);
+                     // Garante que a visualização inicial está correta
+                     toggleView(currentView);
                 }
             }, (error) => {
                 console.error("Erro ao ouvir o mural em tempo real: ", error);
-                // Exibe uma mensagem de erro na UI
                 authStatusEl.textContent = `Erro de conexão: ${error.message}`;
             });
         }
