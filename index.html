@@ -84,6 +84,10 @@
         <!-- Formulário de Nova Nota -->
         <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg mb-8">
             <h2 class="text-xl font-bold mb-4 text-gray-700">Escreva sua Percepção</h2>
+            
+            <!-- NOVO CAMPO DE NOME/APELIDO -->
+            <input type="text" id="user-name" maxlength="50" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 resize-none mb-3" placeholder="Seu Nome/Apelido (Opcional, Máx. 50 caracteres)">
+
             <textarea id="feedback-text" rows="4" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-4 focus:ring-indigo-200 focus:border-indigo-500 resize-none mb-4" placeholder="Digite aqui seu elogio, sugestão, crítica ou ideia..."></textarea>
             
             <div id="error-message" class="text-red-600 mb-3 hidden"></div>
@@ -106,7 +110,7 @@
 
         <!-- Área de Exibição do Mural -->
         <h2 class="text-2xl font-bold text-gray-800 mb-5">Mural de Notas (Tempo Real)</h2>
-        <div id="auth-status" class="text-sm text-gray-500 mb-4">Aguardando autenticação...</div>
+        <div id="auth-status" class="text-sm text-gray-500 mb-4">Autenticação: Conectando...</div>
         <div id="feedback-mural" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             <!-- Notas serão injetadas aqui -->
         </div>
@@ -119,8 +123,6 @@
         import { getFirestore, collection, addDoc, query, onSnapshot, orderBy, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // CONFIGURAÇÃO DE FALLBACK (PERSISTENTE):
-        // Usa as configurações fornecidas pelo usuário. Esta é a configuração que será
-        // utilizada quando o arquivo for rodado fora do ambiente de desenvolvimento (p. ex., localmente).
         const SAFE_FALLBACK_CONFIG = {
             apiKey: "AIzaSyCv-NFeRjPGqxfnKNhH072nUmeE-2nQvG0",
             authDomain: "emoji-f344e.firebaseapp.com",
@@ -134,7 +136,7 @@
         // Configurações globais (fornecidas pelo ambiente)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // CORREÇÃO APLICADA AQUI: Usa a variável de ambiente (se existir) ou a configuração de FALLBACK
+        // Usa a variável de ambiente (se existir) ou a configuração de FALLBACK
         const firebaseConfig = typeof __firebase_config !== 'undefined' 
             ? JSON.parse(__firebase_config) 
             : SAFE_FALLBACK_CONFIG;
@@ -163,10 +165,10 @@
             const usingFallback = typeof __firebase_config === 'undefined';
             
             if (usingFallback) {
-                authStatusEl.textContent = "Inicializando com as suas configurações incorporadas. (Persistência OK).";
+                authStatusEl.textContent = "Autenticação: Conectado (Usando suas credenciais).";
                 console.warn("Aviso: A variável de ambiente __firebase_config não foi encontrada. Usando a configuração hardcoded.");
             } else {
-                 authStatusEl.textContent = "Inicializando Firebase...";
+                 authStatusEl.textContent = "Autenticação: Inicializando...";
             }
 
             try {
@@ -183,7 +185,8 @@
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
-                        authStatusEl.textContent = `Autenticado como: ${userId}`;
+                        // ALTERAÇÃO 1: Não mostra o ID do usuário na tela
+                        authStatusEl.textContent = "Autenticação: Conectado. Mural pronto!";
                         isAuthReady = true;
                         // Inicia o listener de dados após a autenticação
                         setupRealtimeListener();
@@ -212,6 +215,9 @@
          */
         window.submitFeedback = async (category) => {
             const feedbackText = document.getElementById('feedback-text').value.trim();
+            // ALTERAÇÃO 2: Pega o nome/apelido
+            const userName = document.getElementById('user-name').value.trim(); 
+
             errorMessageEl.classList.add('hidden');
 
             if (!isAuthReady) {
@@ -237,22 +243,24 @@
             const muralPath = `artifacts/${appId}/public/data/feedback_mural`;
 
             try {
-                // Adiciona o documento com os campos validados pelas regras (text e category)
+                // ALTERAÇÃO 2: Salva o nome/apelido (userName) no documento
                 const docRef = await addDoc(collection(db, muralPath), {
                     text: feedbackText, 
                     category: category, 
-                    userId: userId,
+                    userId: userId, // Mantido para rastreabilidade no banco de dados
+                    userName: userName, // NOVO CAMPO
                     timestamp: serverTimestamp(),
                 });
                 console.log("Documento escrito com ID: ", docRef.id);
 
-                // Limpa o campo de texto após o envio
+                // Limpa os campos de texto após o envio
                 document.getElementById('feedback-text').value = '';
+                document.getElementById('user-name').value = ''; // Limpa o nome também
 
             } catch (e) {
                 console.error("Erro ao adicionar documento: ", e);
                 // Exibe uma mensagem mais clara para o usuário sobre falha
-                errorMessageEl.textContent = "Erro ao enviar feedback. (A configuração pode estar incorreta ou o limite de 500 caracteres foi excedido).";
+                errorMessageEl.textContent = "Erro ao enviar feedback. Verifique se o nome/apelido não excede 50 caracteres e a percepção 500.";
                 errorMessageEl.classList.remove('hidden');
             }
         }
@@ -265,11 +273,11 @@
             feedbackMuralEl.innerHTML = ''; // Limpa o mural
 
             notes.forEach(note => {
-                const { text, category, userId, timestamp } = note;
+                const { text, category, userName, timestamp } = note;
                 const config = CATEGORIES[category] || { emoji: '?', label: 'Desconhecido', colorClass: 'bg-gray-200' };
 
-                // Formata o ID do usuário (exibe o ID completo conforme a regra)
-                const authorId = userId || 'Anônimo';
+                // ALTERAÇÃO 3: Define o nome a ser exibido
+                const authorDisplay = userName && userName.trim().length > 0 ? userName : 'Anônimo';
 
                 // Formata o timestamp
                 let timeStr = 'agora';
@@ -285,7 +293,7 @@
                     </div>
                     <p class="note-text text-gray-800">${text}</p>
                     <div class="note-footer">
-                        Por: ${authorId} às ${timeStr}
+                        Por: ${authorDisplay} às ${timeStr}
                     </div>
                 `;
                 feedbackMuralEl.appendChild(noteDiv);
